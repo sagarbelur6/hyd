@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Test Case Generator</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol'; margin: 20px; }
+    .row { display: flex; gap: 16px; align-items: stretch; }
+    .col { flex: 1; min-width: 280px; }
+    textarea { width: 100%; min-height: 180px; padding: 10px; font-size: 14px; }
+    #dropzone { border: 2px dashed #888; border-radius: 8px; padding: 16px; text-align: center; min-height: 120px; }
+    #dropzone.dragover { border-color: #4f8cff; background: rgba(79, 140, 255, 0.08); }
+    .images { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .images img { max-height: 120px; border-radius: 6px; }
+    button { padding: 10px 14px; font-size: 14px; }
+    .controls { display: flex; gap: 8px; align-items: center; margin: 10px 0; }
+    .results pre { white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <h2>Test Case Generator</h2>
+  <div class="row">
+    <div class="col">
+      <label>Prompt</label>
+      <textarea id="prompt" placeholder="Describe the feature, requirements, or flow. Optionally combine with screenshots."></textarea>
+      <div class="controls">
+        <label>Number of cases:</label>
+        <input type="number" id="num_cases" min="1" max="50" value="8" />
+        <label>Mode:</label>
+        <select id="mode">
+          <option value="auto">auto</option>
+          <option value="openai">openai</option>
+          <option value="local">local</option>
+        </select>
+        <input type="file" id="file_input" multiple accept="image/*" />
+        <button id="generate">Generate</button>
+      </div>
+      <div id="dropzone" tabindex="0">Drop images here or paste a screenshot (Ctrl/Cmd+V)</div>
+      <div class="images" id="preview"></div>
+    </div>
+    <div class="col results">
+      <label>Result</label>
+      <pre id="output"></pre>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('file_input');
+    const dropzone = document.getElementById('dropzone');
+    const preview = document.getElementById('preview');
+    const promptEl = document.getElementById('prompt');
+    const numCasesEl = document.getElementById('num_cases');
+    const modeEl = document.getElementById('mode');
+    const output = document.getElementById('output');
+
+    const images = [];
+
+    function addFile(file) {
+      images.push(file);
+      const url = URL.createObjectURL(file);
+      const img = document.createElement('img');
+      img.src = url;
+      img.onload = () => URL.revokeObjectURL(url);
+      preview.appendChild(img);
+    }
+
+    fileInput.addEventListener('change', (e) => {
+      for (const f of e.target.files) addFile(f);
+      fileInput.value = '';
+    });
+
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+    dropzone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      for (const f of e.dataTransfer.files) { if (f.type.startsWith('image/')) addFile(f); }
+    });
+
+    window.addEventListener('paste', (e) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const it of items) {
+        if (it.type.startsWith('image/')) {
+          const file = it.getAsFile();
+          if (file) addFile(file);
+        }
+      }
+    });
+
+    document.getElementById('generate').addEventListener('click', async () => {
+      output.textContent = 'Generating...';
+      try {
+        const form = new FormData();
+        form.append('prompt', promptEl.value || '');
+        form.append('num_cases', String(Math.min(Math.max(parseInt(numCasesEl.value || '8', 10) || 8, 1), 50)));
+        form.append('mode', modeEl.value);
+        for (const img of images) form.append('image_files', img, img.name || 'image.png');
+
+        const res = await fetch('/generate-testcases', { method: 'POST', body: form });
+        if (!res.ok) throw new Error('Request failed: ' + res.status);
+        const data = await res.json();
+        output.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        output.textContent = 'Error: ' + (err?.message || err);
+      }
+    });
+  </script>
+</body>
+</html>
